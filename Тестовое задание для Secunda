@@ -1,0 +1,4 @@
+Внутри репозитория находится 4 файла:
+1. qiwi-payout-e2e.zip - ZIP файл, в котором так же лежат ..postman_collesction и ..spec.ts
+2. qiwi-payout.postman_collection.json - Postman коллекция
+3. qiwi.payout.spec - Скрипт для Playwright
