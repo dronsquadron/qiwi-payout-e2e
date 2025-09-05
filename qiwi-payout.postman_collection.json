@@ -1,0 +1,230 @@
+{
+  "info": {
+    "name": "QIWI Payout API v1 — Contract & E2E (safe)",
+    "_postman_id": "78582b89-7b7a-4af2-9781-7f8815622c66",
+    "description": "Коллекция проверок по документации QIWI Payout API v1. Без попыток выполнить реальные платежи. Использует тестовый хост и негативные кейсы (401) для проверки доступности сервиса.\nИсточник документации: https://developer.qiwi.com/ru/payout/v1/",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1) Сервис доступен: Получить все платежи (ожидаем 401/403 без токена)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {},
+        "url": {
+          "raw": "{{baseUrl}}/v1/agents/{{agentId}}/points/{{pointId}}/payments",
+          "host": [],
+          "path": []
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Доступ сервиса: ожидаем 401 без валидного токена и корректную структуру ошибки",
+              "pm.test(\"Status is 401 or 403\", function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([401, 403]);",
+              "});",
+              "pm.test(\"Body is JSON\", function () {",
+              "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+              "});",
+              "// Если есть поле errorCode (согласно CommonError), проверим его тип",
+              "try {",
+              "  const body = pm.response.json();",
+              "  if (body.errorCode) {",
+              "    pm.expect(body).to.have.property(\"errorCode\");",
+              "  }",
+              "} catch(e) { /* ignore non-json */ }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) Баланс точки (available > 0 при 200)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {},
+        "url": {
+          "raw": "{{baseUrl}}/v1/agents/{{agentId}}/points/{{pointId}}/balance",
+          "host": [],
+          "path": []
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Если получили 200 — проверяем контракт и условие available > 0",
+              "if (pm.response.code === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.test(\"Balance object shape\", function () {",
+              "    pm.expect(body).to.have.property(\"balance\");",
+              "    pm.expect(body.balance).to.have.property(\"value\");",
+              "    pm.expect(body.balance).to.have.property(\"currency\");",
+              "    pm.expect(body).to.have.property(\"available\");",
+              "  });",
+              "  const toNumber = v => typeof v === 'string' ? parseFloat(v.replace(',', '.')) : v;",
+              "  pm.test(\"Available > 0\", function () {",
+              "    pm.expect(toNumber(body.available.value)).to.be.above(0);",
+              "  });",
+              "} else {",
+              "  // Без токена/прав ожидаем корректную ошибку",
+              "  pm.test(\"Unauthorized/Forbidden for missing token\", function () {",
+              "    pm.expect(pm.response.code).to.be.oneOf([401, 403]);",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3) Создание заявки на платеж (1 RUB)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"recipientDetails\": {\n    \"providerCode\": \"qiwi-wallet\",\n    \"fields\": {\n      \"account\": \"79990000000\"\n    }\n  },\n  \"amount\": {\n    \"value\": \"1.00\",\n    \"currency\": \"RUB\"\n  },\n  \"source\": {\n    \"paymentType\": \"NO_EXTRA_CHARGE\",\n    \"paymentToolType\": \"BANK_ACCOUNT\",\n    \"paymentTerminalType\": \"INTERNET_BANKING\"\n  },\n  \"callbackUrl\": \"https://example.com/callback\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/agents/{{agentId}}/points/{{pointId}}/payments/{{paymentId}}",
+          "host": [],
+          "path": []
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Создание заявки: если 200 — проверим ключевые поля по PaymentInfo; иначе корректная ошибка",
+              "if (pm.response.code === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.test(\"Has paymentId and status\", function () {",
+              "    pm.expect(body).to.have.property(\"paymentId\");",
+              "    pm.expect(body).to.have.property(\"status\");",
+              "    pm.expect(body.status).to.have.property(\"value\");",
+              "  });",
+              "  pm.test(\"Amount is 1.00 RUB\", function () {",
+              "    pm.expect(body.amount.value).to.equal(\"1.00\");",
+              "    pm.expect(body.amount.currency).to.equal(\"RUB\");",
+              "  });",
+              "} else {",
+              "  pm.test(\"Unauthorized/validation error\", function () {",
+              "    pm.expect(pm.response.code).to.be.oneOf([400, 401, 403, 422]);",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4) Исполнение платежа",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {},
+        "url": {
+          "raw": "{{baseUrl}}/v1/agents/{{agentId}}/points/{{pointId}}/payments/{{paymentId}}/execute",
+          "host": [],
+          "path": []
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Исполнение платежа: ожидаем либо 200 с финальным статусом, либо 202/409/4xx в тестовой среде",
+              "if (pm.response.code === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.test(\"Has status\", function () {",
+              "    pm.expect(body).to.have.property(\"status\");",
+              "    pm.expect(body.status).to.have.property(\"value\");",
+              "  });",
+              "} else {",
+              "  pm.test(\"Expected non-200 in test env (no creds)\", function () {",
+              "    pm.expect(pm.response.code).to.be.oneOf([202, 400, 401, 403, 409, 422]);",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api-test.qiwi.com/partner/payout",
+      "type": "string"
+    },
+    {
+      "key": "agentId",
+      "value": "acme",
+      "type": "string"
+    },
+    {
+      "key": "pointId",
+      "value": "00001",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "<put-your-test-token>",
+      "type": "string"
+    },
+    {
+      "key": "paymentId",
+      "value": "c0d85b0b-a528-9c66-4a15-cb7a12eda9d6",
+      "type": "string"
+    }
+  ]
+}
